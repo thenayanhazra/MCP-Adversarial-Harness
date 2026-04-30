@@ -59,6 +59,9 @@ context. This creates three injection surfaces:
 # Requires Python 3.11+ and uv
 pip install uv
 
+# Once published:
+# uv pip install mcp-redteam
+
 # Install from source
 git clone https://github.com/thenayanhazra/mcp-adversarial-harness
 cd mcp-adversarial-harness

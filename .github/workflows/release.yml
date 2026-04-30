@@ -41,6 +41,12 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.ref_name }}
+          path: dist/*
+
       - name: Publish to PyPI (trusted publishing)
         if: ${{ secrets.PYPI_API_TOKEN == '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
