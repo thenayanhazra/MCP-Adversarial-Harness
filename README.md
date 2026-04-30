@@ -53,16 +53,22 @@ context. This creates three injection surfaces:
 
 ## Install
 
+> Package status: `mcp-redteam` is not yet published on PyPI. Install from source for now.
+
 ```bash
 # Requires Python 3.11+ and uv
 pip install uv
-uv pip install mcp-redteam          # from PyPI (once published)
 
-# Or install from source
+# Once published:
+# uv pip install mcp-redteam
+
+# Install from source
 git clone https://github.com/thenayanhazra/mcp-adversarial-harness
 cd mcp-adversarial-harness
 uv pip install -e ".[dev]"
 ```
+
+Track release notes here: <https://github.com/thenayanhazra/mcp-adversarial-harness/releases>.
 
 ---
 
