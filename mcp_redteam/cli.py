@@ -24,6 +24,7 @@ from mcp_redteam.report.models import ScanResult, Verdict
 from mcp_redteam.report.sarif import write_sarif
 from mcp_redteam.runner.orchestrator import run_scan
 from mcp_redteam.session import Session
+from mcp_redteam.transport.config import PolicyConfig, evaluate_server_policy
 from mcp_redteam.transport.http import transport_from_spec
 
 console = Console()
@@ -48,6 +49,8 @@ def main() -> None:
 @click.option("--timeout", default=60.0, show_default=True, help="Per-probe timeout in seconds")
 @click.option("--system-prompt", default=None, help="Override the default system prompt")
 @click.option("--i-have-permission", is_flag=True, default=False, help="Required for non-localhost targets")
+@click.option("--policy-file", type=click.Path(exists=True), help="JSON policy file with allowlist/denylist")
+@click.option("--allow-public-hosts", is_flag=True, default=False, help="Override default block on public HTTP/SSE hosts")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Show verbose output")
 def scan(
     server_spec: str,
@@ -58,6 +61,8 @@ def scan(
     timeout: float,
     system_prompt: str | None,
     i_have_permission: bool,
+    policy_file: str | None,
+    allow_public_hosts: bool,
     verbose: bool,
 ) -> None:
     """Scan an MCP server for injection vulnerabilities."""
@@ -65,6 +70,11 @@ def scan(
     cat_list = [Category(c.strip()) for c in categories.split(",") if c.strip()] if categories else []
     extra_dirs = [Path(d) for d in corpus_dirs]
     payloads = load_corpus(extra_dirs=extra_dirs, categories=cat_list if cat_list else None)
+
+    policy = PolicyConfig.from_file(policy_file)
+    if allow_public_hosts:
+        policy.allow_public_hosts = True
+    _enforce_policy_or_exit(server_spec, policy, command="scan")
 
     session = Session(
         server_spec=server_spec,
@@ -76,6 +86,7 @@ def scan(
         system_prompt=system_prompt,
         i_have_permission=i_have_permission,
         verbose=verbose,
+        policy=policy,
     )
 
     console.print(f"\n[bold]mcp-redteam scan[/bold]")
@@ -113,6 +124,7 @@ def scan(
                 timeout=timeout,
                 system=system_prompt,
                 i_have_permission=i_have_permission,
+                policy=policy,
                 progress_callback=on_probe,
             )
         )
@@ -136,11 +148,17 @@ def scan(
 
 @main.command("list-tools")
 @click.argument("server_spec")
-def list_tools(server_spec: str) -> None:
+@click.option("--policy-file", type=click.Path(exists=True), help="JSON policy file with allowlist/denylist")
+@click.option("--allow-public-hosts", is_flag=True, default=False, help="Override default block on public HTTP/SSE hosts")
+def list_tools(server_spec: str, policy_file: str | None, allow_public_hosts: bool) -> None:
     """Enumerate tools, resources, and prompts on a server."""
 
     async def _run() -> None:
         from mcp_redteam.probe.enumerator import enumerate_server
+        policy = PolicyConfig.from_file(policy_file)
+        if allow_public_hosts:
+            policy.allow_public_hosts = True
+        _enforce_policy_or_exit(server_spec, policy, command="list-tools")
         transport = transport_from_spec(server_spec)
         async with transport:
             manifest = await enumerate_server(transport)
@@ -174,12 +192,18 @@ def list_tools(server_spec: str) -> None:
 @click.option("--iterations", default=20, show_default=True, help="Fuzz cases per tool")
 @click.option("--out", "out_dir", default="mcp-redteam-fuzz", show_default=True)
 @click.option("--i-have-permission", is_flag=True, default=False)
-def fuzz(server_spec: str, iterations: int, out_dir: str, i_have_permission: bool) -> None:
+@click.option("--policy-file", type=click.Path(exists=True), help="JSON policy file with allowlist/denylist")
+@click.option("--allow-public-hosts", is_flag=True, default=False, help="Override default block on public HTTP/SSE hosts")
+def fuzz(server_spec: str, iterations: int, out_dir: str, i_have_permission: bool, policy_file: str | None, allow_public_hosts: bool) -> None:
     """Schema-driven parameter fuzzing (robustness, not injection)."""
 
     async def _run() -> None:
         from mcp_redteam.probe.enumerator import enumerate_server
         from mcp_redteam.runner.fuzzer import fuzz_server
+        policy = PolicyConfig.from_file(policy_file)
+        if allow_public_hosts:
+            policy.allow_public_hosts = True
+        _enforce_policy_or_exit(server_spec, policy, command="fuzz")
         transport = transport_from_spec(server_spec)
         async with transport:
             manifest = await enumerate_server(transport)
@@ -238,6 +262,15 @@ def _print_summary(result: ScanResult, n_human: int) -> None:
 
     console.print(f"\n[bold]Scan complete[/bold]")
     console.print(f"  Total probes : {total}")
+
+
+def _enforce_policy_or_exit(server_spec: str, policy: PolicyConfig, *, command: str) -> None:
+    allowed, reason = evaluate_server_policy(server_spec, policy)
+    if "override" in reason:
+        console.print(f"[yellow]AUDIT[/yellow] policy override on {command}: {reason} ({server_spec})")
+    if not allowed:
+        console.print(f"[red]BLOCKED[/red] {reason}: {server_spec}")
+        raise SystemExit(1)
     if vuln > 0:
         console.print(f"  Vulnerable   : [bold red]{vuln}[/bold red]")
     else:

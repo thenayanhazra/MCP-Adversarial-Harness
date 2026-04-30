@@ -108,13 +108,19 @@ mcp-redteam scan <server-spec>
     --categories <list>       Comma-separated category filter (e.g. EXFIL,HIJACK)
     --timeout   <seconds>     Per-probe timeout (default: 60)
     --i-have-permission       Required for non-localhost targets
+    --policy-file <path>      JSON policy file for allowlist/denylist controls
+    --allow-public-hosts      Override default block on public HTTP/SSE hosts
 
 mcp-redteam list-tools <server-spec>
     Enumerate tools, resources, and prompts; print full schemas.
+    --policy-file <path>      JSON policy file for allowlist/denylist controls
+    --allow-public-hosts      Override default block on public HTTP/SSE hosts
 
 mcp-redteam fuzz <server-spec>
     Schema-driven parameter fuzzing (robustness, separate from injection corpus).
     --iterations <n>          Number of fuzz cases per tool (default: 20)
+    --policy-file <path>      JSON policy file for allowlist/denylist controls
+    --allow-public-hosts      Override default block on public HTTP/SSE hosts
 
 mcp-redteam reproduce <finding-id>
     Replay a single finding from a previous scan's JSONL transcript.
@@ -129,6 +135,54 @@ mcp-redteam reproduce <finding-id>
 | `sse:<url>` | `sse:https://example.com/sse` |
 | `http:<url>` | `http:https://example.com/mcp` |
 | `config:<file>#<name>` | `config:~/Library/Application Support/Claude/claude_desktop_config.json#filesystem` |
+
+### Policy files (safe by default)
+
+`mcp-redteam` blocks public HTTP/SSE hosts by default. Localhost and private
+targets continue to work without changes. Teams can opt in to explicit policy
+files to allow approved targets/transports and deny unsafe ones.
+
+Example `policy.json`:
+
+```json
+{
+  "allow_public_hosts": false,
+  "allowlist": [
+    "api.internal.example.com",
+    "sse:https://scanner-gateway.example.com/mcp",
+    "stdio"
+  ],
+  "denylist": [
+    "http",
+    "prod-db-tools.example.com"
+  ]
+}
+```
+
+Supported entries in `allowlist`/`denylist`:
+- exact server spec (`sse:https://...`)
+- transport name (`stdio`, `http`, `sse`, `config`)
+- hostname (`api.internal.example.com`)
+
+When a target is allowed via allowlist override, the CLI emits an **AUDIT** log
+line so CI/CD logs capture policy exceptions.
+
+CI usage example:
+
+```bash
+mcp-redteam scan "$SERVER_SPEC" \
+  --model mock \
+  --policy-file .ci/mcp-policy.json \
+  --out results
+```
+
+Temporary emergency override (also audited):
+
+```bash
+mcp-redteam list-tools "sse:https://example.com/mcp" \
+  --policy-file .ci/mcp-policy.json \
+  --allow-public-hosts
+```
 
 ---
 
