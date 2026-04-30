@@ -25,6 +25,7 @@ from mcp_redteam.probe.enumerator import ToolSchema, enumerate_server
 from mcp_redteam.report.models import Finding, Verdict
 from mcp_redteam.runner.agent_loop import run_agent_loop
 from mcp_redteam.runner.shim import ShimTransport
+from mcp_redteam.transport.config import PolicyConfig, evaluate_server_policy
 from mcp_redteam.transport.http import transport_from_spec
 
 _DEFAULT_SYSTEM = (
@@ -43,8 +44,9 @@ async def run_probe(
     timeout: float = 60.0,
     system: str | None = None,
     i_have_permission: bool = False,
+    policy: PolicyConfig | None = None,
 ) -> Finding:
-    _guard_permission(server_spec, i_have_permission)
+    _guard_permission(server_spec, i_have_permission, policy or PolicyConfig())
 
     finding = Finding(
         payload_id=payload.id,
@@ -107,6 +109,7 @@ async def run_scan(
     timeout: float = 60.0,
     system: str | None = None,
     i_have_permission: bool = False,
+    policy: PolicyConfig | None = None,
     progress_callback: Any = None,
 ) -> list[Finding]:
     transcript_dir = out_dir / "transcripts"
@@ -124,6 +127,7 @@ async def run_scan(
             timeout=timeout,
             system=system,
             i_have_permission=i_have_permission,
+            policy=policy,
         )
         findings.append(finding)
 
@@ -196,7 +200,11 @@ def _reproducer(server_spec: str, payload_id: str, model_id: str) -> str:
     )
 
 
-def _guard_permission(server_spec: str, i_have_permission: bool) -> None:
+def _guard_permission(server_spec: str, i_have_permission: bool, policy: PolicyConfig) -> None:
+    allowed, reason = evaluate_server_policy(server_spec, policy)
+    if not allowed:
+        print(f"ERROR: Policy blocked target: {reason}", file=sys.stderr)
+        raise SystemExit(1)
     is_local = (
         "localhost" in server_spec
         or "127.0.0.1" in server_spec

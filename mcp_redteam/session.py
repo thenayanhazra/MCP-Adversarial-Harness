@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mcp_redteam.backends.base import ModelBackend
 from mcp_redteam.corpus.schema import Category
+from mcp_redteam.transport.config import PolicyConfig
 
 
 @dataclass
@@ -20,3 +21,4 @@ class Session:
     system_prompt: str | None = None
     i_have_permission: bool = False
     verbose: bool = False
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
